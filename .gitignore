@@ -23,4 +23,9 @@
 hs_err_pid*
 replay_pid*
 
+temp/
+
 .vscode
+
+# Maven build folder
+target/
