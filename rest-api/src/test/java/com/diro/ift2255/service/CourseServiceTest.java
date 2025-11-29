@@ -1,6 +1,7 @@
 package com.diro.ift2255.service;
 
 import com.diro.ift2255.model.Course;
+import com.diro.ift2255.model.EligibilityResult;
 import com.diro.ift2255.util.HttpClientApi;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,37 +33,31 @@ public class CourseServiceTest {
     // ========================================================================
 
     @Test
-    @DisplayName("CU Recherche de cours - getAllCourses retourne une liste de cours quand l'API répond")
+    @DisplayName("CU Recherche - getAllCourses retourne une liste quand l'API répond")
     void testGetAllCourses_retourneListeDeCoursQuandApiOk() {
-        // ARRANGE
         Course c1 = new Course("IFT1015", "Programmation 1", "Intro à la programmation");
         Course c2 = new Course("IFT2035", "Concepts des langages de programmation", "Cours de C");
         fakeClient.coursesToReturn = List.of(c1, c2);
 
         Map<String, String> params = Map.of("name", "programmation");
 
-        // ACT
         List<Course> result = courseService.getAllCourses(params);
 
-        // ASSERT
-        assertNotNull(result, "La liste retournée ne doit pas être nulle");
-        assertEquals(2, result.size(), "La liste doit contenir 2 cours");
+        assertNotNull(result);
+        assertEquals(2, result.size());
         assertEquals("IFT1015", result.get(0).getId());
         assertEquals("IFT2035", result.get(1).getId());
     }
 
     @Test
-    @DisplayName("CU Recherche de cours - getAllCourses retourne une liste vide quand l'API ne renvoie aucun cours")
+    @DisplayName("CU Recherche - retourne liste vide si aucun cours trouvé")
     void testGetAllCourses_retourneListeVideQuandApiVide() {
-        // ARRANGE
-        fakeClient.coursesToReturn = List.of(); // aucune donnée
+        fakeClient.coursesToReturn = List.of();
 
-        // ACT
         List<Course> result = courseService.getAllCourses(Collections.emptyMap());
 
-        // ASSERT
-        assertNotNull(result, "La liste retournée ne doit pas être nulle");
-        assertTrue(result.isEmpty(), "La liste doit être vide quand l'API ne renvoie aucun cours");
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 
     // ========================================================================
@@ -70,9 +65,8 @@ public class CourseServiceTest {
     // ========================================================================
 
     @Test
-    @DisplayName("CU Détails d'un cours - getCourseById retourne le cours quand il est trouvé")
+    @DisplayName("CU Détail - getCourseById retourne le cours si trouvé")
     void testGetCourseById_retourneCoursQuandTrouve() {
-        // ARRANGE
         Course c = new Course("IFT2035", "Concepts des langages de programmation",
                 "Historique et concepts des langages de programmation");
         c.setCredits(3.0);
@@ -81,14 +75,50 @@ public class CourseServiceTest {
         fakeClient.courseToReturn = c;
         fakeClient.throwOnGetCourse = false;
 
-        // ACT
         Optional<Course> result = courseService.getCourseById("IFT2035");
 
-        // ASSERT
-        assertTrue(result.isPresent(), "Le cours doit être présent");
+        assertTrue(result.isPresent());
         assertEquals("IFT2035", result.get().getId());
         assertEquals(3.0, result.get().getCredits());
         assertEquals("Préalable : IFT1025", result.get().getRequirementText());
+    }
+
+    // ========================================================================
+    // CU : Éligibilité à un cours
+    // ========================================================================
+
+    @Test
+    @DisplayName("CU Éligibilité - étudiant éligible quand tous les prérequis sont remplis")
+    void testCheckEligibility_etudiantEligibleQuandTousPrerequisOK() {
+        Course c = new Course("IFT2035", "Concepts des langages de programmation", null);
+        c.setPrerequisiteCourses(List.of("IFT1025", "IFT1015"));
+
+        fakeClient.courseToReturn = c;
+        fakeClient.throwOnGetCourse = false;
+
+        List<String> completed = List.of("IFT1025", "IFT1015");
+
+        EligibilityResult result = courseService.checkEligibility("IFT2035", completed);
+
+        assertTrue(result.isEligible());
+        assertTrue(result.getMissingPrerequisites().isEmpty());
+    }
+
+    @Test
+    @DisplayName("CU Éligibilité - étudiant non éligible si prérequis manquants")
+    void testCheckEligibility_nonEligibleQuandPrerequisManquants() {
+        Course c = new Course("IFT2035", "Concepts des langages de programmation", null);
+        c.setPrerequisiteCourses(List.of("IFT1025", "IFT1015"));
+
+        fakeClient.courseToReturn = c;
+        fakeClient.throwOnGetCourse = false;
+
+        List<String> completed = List.of("IFT1025");
+
+        EligibilityResult result = courseService.checkEligibility("IFT2035", completed);
+
+        assertFalse(result.isEligible());
+        assertEquals(List.of("IFT1015"), result.getMissingPrerequisites());
     }
 
     // ========================================================================
@@ -96,31 +126,29 @@ public class CourseServiceTest {
     // ========================================================================
 
     @Test
-    @DisplayName("CU Comparer des cours - compareCourses retourne une liste vide si la liste d'IDs est nulle ou vide")
-    void testCompareCourses_retourneListeVideQuandListeIdsNulleOuVide() {
-        // ARRANGE
-        // aucun besoin de configurer le fake client ici : la méthode doit court-circuiter
+    @DisplayName("CU Comparer - retourne les cours correspondants aux IDs fournis")
+    void testCompareCourses_retourneCoursQuandIdsValides() {
+        Course c1 = new Course("IFT1015", "Programmation 1", "Intro");
+        c1.setCredits(3.0);
+        Course c2 = new Course("IFT2035", "Concepts des LP", "C et Java");
+        c2.setCredits(3.0);
 
-        // ACT
-        List<Course> resultNull = courseService.compareCourses(null);
-        List<Course> resultVide = courseService.compareCourses(List.of());
+        fakeClient.coursesToReturn = List.of(c1, c2);
 
-        // ASSERT
-        assertNotNull(resultNull, "Le résultat pour une liste nulle ne doit pas être nul");
-        assertTrue(resultNull.isEmpty(), "Le résultat pour une liste nulle doit être vide");
+        List<String> ids = List.of("IFT1015", "IFT2035");
 
-        assertNotNull(resultVide, "Le résultat pour une liste vide ne doit pas être nul");
-        assertTrue(resultVide.isEmpty(), "Le résultat pour une liste vide doit être vide");
+        List<Course> result = courseService.compareCourses(ids);
+
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("IFT1015", result.get(0).getId());
+        assertEquals("IFT2035", result.get(1).getId());
     }
 
     // ========================================================================
     // Fake client HTTP pour isoler CourseService de l'API réelle
     // ========================================================================
 
-    /**
-     * Implémentation factice de HttpClientApi utilisée uniquement pour les tests.
-     * Elle permet de contrôler les valeurs retournées par les appels GET.
-     */
     private static class FakeHttpClientApi extends HttpClientApi {
 
         List<Course> coursesToReturn = new ArrayList<>();
@@ -132,7 +160,6 @@ public class CourseServiceTest {
             if (throwOnGetCourse) {
                 throw new RuntimeException("Simulated API error for get(URI, Class)");
             }
-            // On suppose ici que le seul type demandé est Course
             @SuppressWarnings("unchecked")
             T value = (T) courseToReturn;
             return value;
@@ -140,7 +167,6 @@ public class CourseServiceTest {
 
         @Override
         public <T> T get(URI uri, TypeReference<T> typeRef) {
-            // On suppose ici que le seul type demandé est List<Course>
             @SuppressWarnings("unchecked")
             T value = (T) coursesToReturn;
             return value;
